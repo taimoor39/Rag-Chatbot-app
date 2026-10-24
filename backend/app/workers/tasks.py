@@ -1,76 +1,63 @@
-import os
 import logging
-from app.core.valkey_conn import ValkeyQueueManager
-from app.services.pdf_parser import extract_chunks_from_pdf
-from app.services.openai_service import get_embeddings_batch
-from app.services.qdrant_service import upsert_document_chunks
+from pathlib import Path
+from app.core.valkey_conn import update_task_status
+from app.services.pdf_parser import extract_documents_from_pdf
+from app.services.qdrant_service import upsert_langchain_documents
 
 logger = logging.getLogger(__name__)
 
 def process_indexing_task(task_id: str, document_id: str, filename: str, file_path: str) -> bool:
     """
-    Executes the PDF ingestion pipeline in the background:
-      1. Parse PDF pages into text chunks
-      2. Generate OpenAI vector embeddings
-      3. Upsert embeddings into Qdrant vector database
-      4. Update progress and status in Valkey
+    Executes the PDF ingestion pipeline using LangChain:
+      1. Parse PDF pages and split with LangChain RecursiveCharacterTextSplitter
+      2. Generate vector embeddings and upsert into Qdrant using QdrantVectorStore
+      3. Track progress and status in Valkey
     """
     try:
-        logger.info(f"Starting task {task_id}: Parsing PDF {filename}")
-        ValkeyQueueManager.update_task_status(task_id, {
+        logger.info(f"Starting task {task_id}: Parsing PDF {filename} via LangChain")
+        update_task_status(task_id, {
             "status": "PARSING",
             "progress": 20,
             "error": "",
         })
 
-        if not os.path.exists(file_path):
+        if not Path(file_path).exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Step 1: Parse chunks
-        chunks = extract_chunks_from_pdf(file_path)
-        if not chunks:
+        # Step 1: LangChain extraction and chunking
+        documents = extract_documents_from_pdf(
+            file_path=file_path,
+            document_id=document_id,
+            filename=filename,
+        )
+        if not documents:
             raise ValueError("No extractable text found in the uploaded PDF document.")
 
-        total_chunks = len(chunks)
-        logger.info(f"Task {task_id}: Parsed {total_chunks} chunks. Generating embeddings...")
+        total_chunks = len(documents)
+        logger.info(f"Task {task_id}: Extracted {total_chunks} documents. Embedding & indexing with LangChain...")
 
-        # Step 2: Embeddings
-        ValkeyQueueManager.update_task_status(task_id, {
-            "status": "EMBEDDING",
-            "progress": 50,
+        # Step 2: LangChain QdrantVectorStore upsert (generates OpenAI embeddings + stores)
+        update_task_status(task_id, {
+            "status": "INDEXING",
+            "progress": 70,
             "total_chunks": total_chunks,
         })
 
-        texts = [chunk["text"] for chunk in chunks]
-        embeddings = get_embeddings_batch(texts)
+        upsert_langchain_documents(documents)
 
-        # Step 3: Upsert into Qdrant
-        logger.info(f"Task {task_id}: Upserting vectors into Qdrant collection...")
-        ValkeyQueueManager.update_task_status(task_id, {
-            "status": "INDEXING",
-            "progress": 80,
-        })
-
-        upsert_document_chunks(
-            document_id=document_id,
-            filename=filename,
-            chunks=chunks,
-            vectors=embeddings,
-        )
-
-        # Step 4: Mark Complete
-        ValkeyQueueManager.update_task_status(task_id, {
+        # Step 3: Complete
+        update_task_status(task_id, {
             "status": "COMPLETED",
             "progress": 100,
             "total_chunks": total_chunks,
         })
-        logger.info(f"Task {task_id} COMPLETED successfully for {filename}")
+        logger.info(f"Task {task_id} COMPLETED successfully via LangChain for {filename}")
         return True
 
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Task {task_id} FAILED for {filename}: {error_msg}")
-        ValkeyQueueManager.update_task_status(task_id, {
+        update_task_status(task_id, {
             "status": "FAILED",
             "error": error_msg,
         })

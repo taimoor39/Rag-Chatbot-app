@@ -1,58 +1,54 @@
 import logging
-from typing import List, Generator, Dict, Any
-from openai import OpenAI
+from typing import List, Generator, Dict
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-def get_openai_client() -> OpenAI:
+def get_embeddings_model() -> OpenAIEmbeddings:
+    """Return LangChain OpenAIEmbeddings client."""
     if not settings.OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set. Please set it in your .env file.")
-    return OpenAI(api_key=settings.OPENAI_API_KEY)
+        raise ValueError("OPENAI_API_KEY is not set in .env")
+    return OpenAIEmbeddings(
+        model=settings.EMBEDDING_MODEL,
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+
+def get_chat_model(streaming: bool = True) -> ChatOpenAI:
+    """Return LangChain ChatOpenAI client with streaming support."""
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY is not set in .env")
+    return ChatOpenAI(
+        model=settings.CHAT_MODEL,
+        openai_api_key=settings.OPENAI_API_KEY,
+        temperature=0.3,
+        streaming=streaming,
+    )
 
 def get_embedding(text: str) -> List[float]:
-    """Generate a single text embedding vector using OpenAI."""
-    client = get_openai_client()
-    clean_input = text.replace("\n", " ")
-    response = client.embeddings.create(
-        input=[clean_input],
-        model=settings.EMBEDDING_MODEL
-    )
-    return response.data[0].embedding
-
-def get_embeddings_batch(texts: List[str], batch_size: int = 64) -> List[List[float]]:
-    """Generate embeddings for multiple texts in batches."""
-    client = get_openai_client()
-    all_embeddings: List[List[float]] = []
-
-    for i in range(0, len(texts), batch_size):
-        batch = [t.replace("\n", " ") for t in texts[i:i + batch_size]]
-        response = client.embeddings.create(
-            input=batch,
-            model=settings.EMBEDDING_MODEL
-        )
-        # Preserve order of embeddings
-        sorted_data = sorted(response.data, key=lambda x: x.index)
-        all_embeddings.extend([item.embedding for item in sorted_data])
-
-    return all_embeddings
+    """Generate a single text embedding vector using LangChain OpenAIEmbeddings."""
+    model = get_embeddings_model()
+    return model.embed_query(text)
 
 def stream_chat_completion(messages: List[Dict[str, str]]) -> Generator[str, None, None]:
-    """
-    Stream tokens from OpenAI chat completion.
-    Yields string deltas as they arrive.
-    """
-    client = get_openai_client()
+    """Stream response tokens using LangChain ChatOpenAI."""
+    llm = get_chat_model(streaming=True)
+    langchain_messages = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "system":
+            langchain_messages.append(SystemMessage(content=content))
+        elif role == "user":
+            langchain_messages.append(HumanMessage(content=content))
+        elif role == "assistant":
+            langchain_messages.append(AIMessage(content=content))
+
     try:
-        response = client.chat.completions.create(
-            model=settings.CHAT_MODEL,
-            messages=messages,
-            stream=True,
-            temperature=0.3,
-        )
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        for chunk in llm.stream(langchain_messages):
+            if chunk.content:
+                yield str(chunk.content)
     except Exception as e:
-        logger.error(f"OpenAI chat completion error: {e}")
+        logger.error(f"LangChain chat stream error: {e}")
         yield f"\n[Error generating response: {str(e)}]"

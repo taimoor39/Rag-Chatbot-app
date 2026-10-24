@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
-from app.core.valkey_conn import ValkeyQueueManager
+from app.core.valkey_conn import check_valkey_health
 from app.core.qdrant_conn import ensure_collection_exists, check_health as check_qdrant_health
 from app.api.routes_docs import router as docs_router
 from app.api.routes_chat import router as chat_router
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing RAG Chatbot backend services...")
     
     # Check Valkey
-    valkey_ok = ValkeyQueueManager.check_health()
+    valkey_ok = check_valkey_health()
     if valkey_ok:
         logger.info(f"✓ Valkey connected successfully at {settings.VALKEY_HOST}:{settings.VALKEY_PORT}")
     else:
@@ -72,7 +72,7 @@ async def health_check():
     """Health check reporting status of Valkey and Qdrant services."""
     return {
         "status": "healthy",
-        "valkey_connected": ValkeyQueueManager.check_health(),
+        "valkey_connected": check_valkey_health(),
         "qdrant_connected": check_qdrant_health(),
         "openai_configured": bool(settings.OPENAI_API_KEY),
         "collection": settings.QDRANT_COLLECTION_NAME,

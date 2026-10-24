@@ -10,9 +10,27 @@ backend_root = Path(__file__).resolve().parent.parent.parent
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
 
+# Ponytail Self-Healing: Auto-delegate to backend virtual environment if run with unactivated system Python
+venv_py_win = backend_root / "venv" / "Scripts" / "python.exe"
+venv_py_posix = backend_root / "venv" / "bin" / "python"
+target_venv = venv_py_win if venv_py_win.exists() else (venv_py_posix if venv_py_posix.exists() else None)
+
+if target_venv and Path(sys.executable).resolve() != target_venv.resolve():
+    try:
+        import pydantic_settings
+    except ImportError:
+        import subprocess
+        sys.exit(subprocess.call([str(target_venv)] + sys.argv))
+
 from app.core.config import settings
-from app.core.valkey_conn import get_valkey_client, ValkeyQueueManager
+from app.core.valkey_conn import get_valkey_client, check_valkey_health
 from app.workers.tasks import process_indexing_task
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,8 +48,12 @@ def handle_shutdown(signum, frame):
 
 def start_worker():
     global running
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
+    try:
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
+    except (ValueError, AttributeError):
+        # Ignore if running in a background thread or non-main interpreter
+        pass
 
     logger.info("==================================================")
     logger.info("  🚀 Valkey RAG Background Queue Worker Started   ")
@@ -40,7 +62,7 @@ def start_worker():
     logger.info("==================================================")
 
     # Verify Valkey connectivity
-    if not ValkeyQueueManager.check_health():
+    if not check_valkey_health():
         logger.error("Could not connect to Valkey. Ensure the Valkey docker container is running!")
         sys.exit(1)
 

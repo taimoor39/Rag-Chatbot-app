@@ -3,9 +3,13 @@ import logging
 from typing import List, Generator
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.output_parsers import StrOutputParser
+
 from app.core.config import settings
 from app.schemas.chat_schema import ChatRequest, ChatResponse, SourceCitation
-from app.services.openai_service import get_embedding, stream_chat_completion, get_openai_client
+from app.services.openai_service import get_chat_model
 from app.services.qdrant_service import search_relevant_chunks
 
 logger = logging.getLogger(__name__)
@@ -33,7 +37,7 @@ def build_system_prompt(citations: List[SourceCitation]) -> str:
     joined_context = "\n".join(context_blocks)
 
     return (
-        "You are an expert AI assistant modeled after ChatGPT, powered by Retrieval-Augmented Generation (RAG).\n"
+        "You are an expert AI assistant modeled after ChatGPT, powered by LangChain and Retrieval-Augmented Generation (RAG).\n"
         "Use the following retrieved document excerpts to answer the user's question accurately.\n"
         "Guidelines:\n"
         "1. Prioritize facts from the provided sources.\n"
@@ -46,8 +50,8 @@ def build_system_prompt(citations: List[SourceCitation]) -> str:
 @router.post("/stream")
 async def chat_stream(request: ChatRequest):
     """
-    RAG Chat endpoint with real-time token streaming via Server-Sent Events (SSE).
-    Retrieves relevant PDF vectors from Qdrant and streams response tokens from OpenAI.
+    RAG Chat endpoint with real-time token streaming using LangChain LCEL and Server-Sent Events (SSE).
+    Retrieves relevant PDF vectors via LangChain QdrantVectorStore and streams response tokens from ChatOpenAI.
     """
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
@@ -56,35 +60,44 @@ async def chat_stream(request: ChatRequest):
         )
 
     try:
-        # Step 1: Query embedding
-        query_vector = get_embedding(request.message)
-
-        # Step 2: Vector retrieval from Qdrant
+        # Step 1: LangChain Qdrant similarity search
         citations = search_relevant_chunks(
-            query_vector=query_vector,
+            query=request.message,
             top_k=settings.TOP_K_RETRIEVAL,
             doc_ids=request.doc_ids,
         )
 
-        # Step 3: Build messages payload
+        # Step 2: Build LangChain message history
         system_prompt = build_system_prompt(citations)
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Append previous conversation history (up to last 10 messages for context)
+        langchain_history = []
         for prev in request.conversation_history[-10:]:
-            messages.append({"role": prev.role, "content": prev.content})
+            if prev.role == "user":
+                langchain_history.append(HumanMessage(content=prev.content))
+            elif prev.role == "assistant":
+                langchain_history.append(AIMessage(content=prev.content))
 
-        # Append current user query
-        messages.append({"role": "user", "content": request.message})
+        # Step 3: Modern LangChain LCEL Chain
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "{system_prompt}"),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{question}"),
+        ])
+
+        llm = get_chat_model(streaming=True)
+        chain = prompt | llm | StrOutputParser()
 
         def event_generator() -> Generator[str, None, None]:
             # First send sources metadata
             sources_data = [c.model_dump() for c in citations]
             yield f"event: sources\ndata: {json.dumps(sources_data)}\n\n"
 
-            # Stream LLM tokens
-            for token in stream_chat_completion(messages):
-                yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
+            # Stream tokens through LangChain chain
+            for chunk in chain.stream({
+                "system_prompt": system_prompt,
+                "history": langchain_history,
+                "question": request.message,
+            }):
+                yield f"event: token\ndata: {json.dumps({'token': chunk})}\n\n"
 
             # Signal stream completion
             yield "event: done\ndata: {}\n\n"
@@ -100,7 +113,7 @@ async def chat_stream(request: ChatRequest):
         )
 
     except Exception as e:
-        logger.error(f"Chat streaming error: {e}")
+        logger.error(f"LangChain chat streaming error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat generation failed: {str(e)}"
@@ -109,7 +122,7 @@ async def chat_stream(request: ChatRequest):
 @router.post("", response_model=ChatResponse)
 async def chat_sync(request: ChatRequest):
     """
-    Standard non-streaming RAG Chat endpoint.
+    Synchronous RAG Chat endpoint powered by LangChain LCEL.
     """
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
@@ -118,33 +131,39 @@ async def chat_sync(request: ChatRequest):
         )
 
     try:
-        query_vector = get_embedding(request.message)
         citations = search_relevant_chunks(
-            query_vector=query_vector,
+            query=request.message,
             top_k=settings.TOP_K_RETRIEVAL,
             doc_ids=request.doc_ids,
         )
 
         system_prompt = build_system_prompt(citations)
-        messages = [{"role": "system", "content": system_prompt}]
-
+        langchain_history = []
         for prev in request.conversation_history[-10:]:
-            messages.append({"role": prev.role, "content": prev.content})
+            if prev.role == "user":
+                langchain_history.append(HumanMessage(content=prev.content))
+            elif prev.role == "assistant":
+                langchain_history.append(AIMessage(content=prev.content))
 
-        messages.append({"role": "user", "content": request.message})
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "{system_prompt}"),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{question}"),
+        ])
 
-        client = get_openai_client()
-        res = client.chat.completions.create(
-            model=settings.CHAT_MODEL,
-            messages=messages,
-            temperature=0.3,
-        )
-        answer = res.choices[0].message.content or ""
+        llm = get_chat_model(streaming=False)
+        chain = prompt | llm | StrOutputParser()
+
+        answer = chain.invoke({
+            "system_prompt": system_prompt,
+            "history": langchain_history,
+            "question": request.message,
+        })
 
         return ChatResponse(answer=answer, sources=citations)
 
     except Exception as e:
-        logger.error(f"Synchronous chat error: {e}")
+        logger.error(f"LangChain synchronous chat error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Chat error: {str(e)}"

@@ -1,19 +1,25 @@
 /**
- * API Client for RAG Chatbot Backend
+ * Platform-Native API Client for RAG Chatbot Backend
+ * 100% Vanilla JS (No jQuery dependency)
  */
 
 const API = {
   baseUrl: "",
 
+  async _request(endpoint, options = {}) {
+    const res = await fetch(`${this.baseUrl}${endpoint}`, options);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Request failed with status ${res.status}`);
+    }
+    return res.json();
+  },
+
   /**
    * Health check
    */
   async checkHealth() {
-    return $.ajax({
-      url: `${this.baseUrl}/api/health`,
-      method: "GET",
-      dataType: "json",
-    });
+    return this._request("/api/health");
   },
 
   /**
@@ -23,13 +29,9 @@ const API = {
     const formData = new FormData();
     formData.append("file", file);
 
-    return $.ajax({
-      url: `${this.baseUrl}/api/docs/upload`,
+    return this._request("/api/docs/upload", {
       method: "POST",
-      data: formData,
-      processData: false,
-      contentType: false,
-      dataType: "json",
+      body: formData,
     });
   },
 
@@ -37,32 +39,22 @@ const API = {
    * Poll Valkey indexing task status
    */
   async getTaskStatus(taskId) {
-    return $.ajax({
-      url: `${this.baseUrl}/api/docs/status/${encodeURIComponent(taskId)}`,
-      method: "GET",
-      dataType: "json",
-    });
+    return this._request(`/api/docs/status/${encodeURIComponent(taskId)}`);
   },
 
   /**
    * List all indexed documents from Qdrant
    */
   async listDocuments() {
-    return $.ajax({
-      url: `${this.baseUrl}/api/docs`,
-      method: "GET",
-      dataType: "json",
-    });
+    return this._request("/api/docs");
   },
 
   /**
    * Delete document chunks from Qdrant
    */
   async deleteDocument(documentId) {
-    return $.ajax({
-      url: `${this.baseUrl}/api/docs/${encodeURIComponent(documentId)}`,
+    return this._request(`/api/docs/${encodeURIComponent(documentId)}`, {
       method: "DELETE",
-      dataType: "json",
     });
   },
 
@@ -99,7 +91,6 @@ const API = {
 
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split("\n\n");
-        // Keep the last partial event block in the buffer
         buffer = events.pop();
 
         for (const eventBlock of events) {

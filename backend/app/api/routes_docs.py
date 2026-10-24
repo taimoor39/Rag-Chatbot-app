@@ -2,10 +2,9 @@ import os
 import uuid
 import shutil
 import logging
-from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from app.core.config import settings
-from app.core.valkey_conn import ValkeyQueueManager
+from app.core.valkey_conn import check_valkey_health, enqueue_indexing_task, get_task_status
 from app.services.qdrant_service import list_indexed_documents, delete_document_points
 from app.schemas.document_schema import (
     DocumentUploadResponse,
@@ -30,7 +29,7 @@ async def upload_document(file: UploadFile = File(...)):
         )
 
     # Check Valkey connectivity
-    if not ValkeyQueueManager.check_health():
+    if not check_valkey_health():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Valkey background queue service is currently unreachable. Make sure the Valkey docker container is running."
@@ -55,7 +54,7 @@ async def upload_document(file: UploadFile = File(...)):
         await file.close()
 
     # Enqueue task in Valkey
-    ValkeyQueueManager.enqueue_indexing_task(
+    enqueue_indexing_task(
         task_id=task_id,
         document_id=document_id,
         filename=sanitized_filename,
@@ -71,11 +70,11 @@ async def upload_document(file: UploadFile = File(...)):
     )
 
 @router.get("/status/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+async def get_task_status_endpoint(task_id: str):
     """
     Poll the status of an asynchronous PDF indexing task from Valkey.
     """
-    status_data = ValkeyQueueManager.get_task_status(task_id)
+    status_data = get_task_status(task_id)
     if not status_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -116,10 +115,7 @@ async def delete_document(document_id: str):
         delete_document_points(document_id)
         # Clean up files matching document_id in uploads directory
         for f in settings.UPLOAD_DIR.glob(f"{document_id}_*"):
-            try:
-                os.remove(f)
-            except OSError:
-                pass
+            f.unlink(missing_ok=True)
         return {"message": f"Document '{document_id}' successfully deleted."}
     except Exception as e:
         logger.error(f"Error deleting document {document_id}: {e}")

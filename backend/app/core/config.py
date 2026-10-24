@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = BASE_DIR / "uploads"
 
     model_config = SettingsConfigDict(
-        env_file=str(BASE_DIR.parent / ".env"),
+        env_file=(str(BASE_DIR / ".env"), str(BASE_DIR.parent / ".env")),
         env_file_encoding="utf-8",
         extra="ignore"
     )

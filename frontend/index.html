@@ -17,15 +17,16 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="brand-title mb-3">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2">
-          <rect width="16" height="12" x="4" y="8" rx="2"></rect>
-          <path d="M12 8V4H8"></path>
-        </svg>
+        <div class="brand-icon-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2.2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+          </svg>
+        </div>
         <span>RAG ChatGPT</span>
         <span class="brand-badge">Valkey</span>
       </div>
       <button class="btn-new-chat" id="btnNewChat">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 5v14M5 12h14"></path>
         </svg>
         <span>New conversation</span>
@@ -69,12 +70,11 @@
 
     <!-- Sidebar Footer with Health Status -->
     <div class="sidebar-footer">
-      <div>
-        <span class="status-indicator" id="valkeyIndicator"></span>
-        <span class="status-indicator" id="qdrantIndicator"></span>
-        <span id="statusText">Checking services...</span>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Valkey & Qdrant Online</span>
       </div>
-      <span style="font-size: 0.7rem; opacity: 0.6;">v1.0.0</span>
+      <span style="font-size: 0.7rem; opacity: 0.5;">v1.0</span>
     </div>
   </aside>
 
@@ -82,9 +82,19 @@
   <main class="chat-main">
     <!-- Top Navigation Bar -->
     <div class="chat-navbar">
-      <div class="model-pill">
-        <span>🤖 OpenAI RAG Assistant</span>
-        <span class="badge bg-dark border border-secondary" style="font-weight: 500;">Qdrant + Valkey</span>
+      <div class="nav-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2">
+          <rect width="16" height="12" x="4" y="8" rx="2"></rect>
+          <path d="M12 8V4H8"></path>
+          <path d="M2 14h2"></path>
+          <path d="M20 14h2"></path>
+          <path d="M15 13v2"></path>
+          <path d="M9 13v2"></path>
+        </svg>
+        <span>OpenAI RAG Assistant</span>
+      </div>
+      <div class="engine-pill">
+        <span>Qdrant + Valkey Engine</span>
       </div>
     </div>
 
@@ -155,8 +165,6 @@
   </main>
 </div>
 
-<!-- jQuery (3.7.1) -->
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Marked.js for Markdown rendering -->
