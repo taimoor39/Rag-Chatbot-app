@@ -1,10 +1,10 @@
-# 🤖 Full-Stack ChatGPT RAG with Valkey & Qdrant
+#  Full-Stack ChatGPT RAG with Valkey & Qdrant
 
 A production-grade, asynchronous Retrieval-Augmented Generation (RAG) conversational AI application. Built with **FastAPI**, **Valkey Queue (Docker)**, **Qdrant Vector Database (Docker)**, **OpenAI Embeddings & Chat Completion (Streaming)**, and a **ChatGPT-style UI (HTML, CSS, Bootstrap 5, Vanilla JS, and jQuery)**.
 
 ---
 
-## 🌟 Key Features
+##  Key Features
 
 - **Asynchronous Background Ingestion**: PDF uploads are non-blocking; document parsing, chunking, and embedding are enqueued and processed via **Valkey** queue workers.
 - **Valkey Message Broker**: Uses official Docker image `valkey/valkey:latest` (high-performance Redis fork) for background tasks and live status tracking.
@@ -41,7 +41,7 @@ A production-grade, asynchronous Retrieval-Augmented Generation (RAG) conversati
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```text
 rag-chatbot/
@@ -89,7 +89,7 @@ rag-chatbot/
 
 ---
 
-## 🚀 Quickstart Guide
+##  Quickstart Guide
 
 ### 1. Prerequisites
 - [Docker & Docker Compose](https://www.docker.com/)
@@ -196,7 +196,7 @@ The server will initialize the Qdrant collection `rag_documents` and start on:
 
 ---
 
-## 💬 Usage Flow
+##  Usage Flow
 
 1. **Upload Documents**: In the left sidebar, drag & drop any PDF document.
 2. **Background Processing**: FastAPI sends the file to the Valkey queue. The background worker parses text, creates embeddings with OpenAI, and stores vectors into Qdrant. The progress bar reflects live status (`PARSING` -> `EMBEDDING` -> `INDEXING` -> `COMPLETED`).
@@ -204,7 +204,7 @@ The server will initialize the Qdrant collection `rag_documents` and start on:
 
 ---
 
-## 🛠️ API Reference
+##  API Reference
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -218,5 +218,3 @@ The server will initialize the Qdrant collection `rag_documents` and start on:
 
 ---
 
-## 🛡️ License
-MIT License.
